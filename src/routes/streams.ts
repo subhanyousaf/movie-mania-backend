@@ -68,8 +68,7 @@ router.post("/", async (req: Request, res: Response) => {
   });
 
   const stream = await providers.runAll({
-    media: body,
-    sourceOrder: ["showbox"],
+    media: body
   });
 
   console.log(stream?.stream.captions)
