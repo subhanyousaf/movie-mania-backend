@@ -71,8 +71,6 @@ router.post("/", async (req: Request, res: Response) => {
     media: body
   });
 
-  console.log(stream?.stream.captions)
-
   return res.status(200).json(stream);
 });
 
