@@ -63,8 +63,7 @@ router.post("/", async (req: Request, res: Response) => {
 
   const providers = makeProviders({
     fetcher: makeStandardFetcher(fetch),
-    target: targets.ANY,
-    consistentIpForRequests: false,
+    target: targets.ANY
   });
 
   const stream = await providers.runAll({
