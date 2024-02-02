@@ -1,4 +1,5 @@
 import {
+  NotFoundError,
   ScrapeMedia,
   makeProviders,
   makeStandardFetcher,
@@ -6,6 +7,7 @@ import {
 } from "@movie-web/providers";
 import { Request, Response, Router } from "express";
 import z from "zod";
+import { sortEmbedsByRank } from "../utils/utils";
 
 enum StreamType {
   Show = "show",
@@ -44,8 +46,9 @@ const showSchema = z.object({
 
 const router = Router();
 
-router.post("/", async (req: Request, res: Response) => {
+router.post("/:source?", async (req: Request, res: Response) => {
   const body: ScrapeMedia = req.body;
+  const source = req.params.source;
 
   const streamValidation = streamSchema.safeParse(body);
   if (!streamValidation.success) {
@@ -63,14 +66,84 @@ router.post("/", async (req: Request, res: Response) => {
 
   const providers = makeProviders({
     fetcher: makeStandardFetcher(fetch),
-    target: targets.ANY
+    target: targets.ANY,
   });
 
-  const stream = await providers.runAll({
-    media: body
-  });
+  try {
+    if (source) {
+      const sources = providers.listSources();
+      const embeds = providers.listEmbeds();
+      const sourceExists = sources.find((s) => s.id === source);
+      if (!sourceExists) {
+        return res.status(400).send("Invalid source");
+      }
 
-  return res.status(200).json(stream);
+      const embedScrapers = await providers.runSourceScraper({
+        id: source,
+        media: body,
+      });
+
+      const sortedArray = sortEmbedsByRank(
+        embedScrapers.embeds,
+        embeds
+      ).reverse();
+
+      const streamsFound = [];
+      for (const embed of sortedArray) {
+        try {
+          const embedScraperRunner = await providers.runEmbedScraper({
+            id: embed.embedId,
+            url: embed.url,
+          });
+
+          if (embedScraperRunner) {
+            const streamData = embedScraperRunner.stream[0];
+            if (streamData.type === "file") {
+              if (streamData.qualities["unknown"]) continue;
+            }
+            streamsFound.push(embedScraperRunner.stream[0]);
+            continue;
+          }
+        } catch (error) {
+          if (!(error instanceof NotFoundError)) {
+            console.log(error);
+          }
+        }
+      }
+
+      return res.status(200).json({
+        sourceId: source,
+        streams: streamsFound,
+      });
+    } else {
+      const stream = await providers.runAll({
+        media: body,
+      });
+
+      return res.status(200).json({
+        sourceId: stream?.sourceId || null,
+        streams: stream ? [stream.stream] : [],
+      });
+    }
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) {
+      console.log(error);
+    }
+  }
+
+  return res.status(200).json({
+    sourceId: null,
+    streams: [],
+  });
+});
+
+router.get("/sources", async (req: Request, res: Response) => {
+  console.log("hi");
+  const providers = makeProviders({
+    fetcher: makeStandardFetcher(fetch),
+    target: targets.ANY,
+  });
+  return res.status(200).json(providers.listSources());
 });
 
 export default router;
